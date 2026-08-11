@@ -176,18 +176,24 @@ always run with parameters via the official `neo4j` driver — never string-conc
 ### Query 1 — Staffing recommendation (multi-hop traversal) {#query-1}
 
 ```cypher
-MATCH (proj:Project {id: $projectId})-[req:REQUIRES_SKILL]->(skill:Skill)
+MATCH (proj:Project {id: $projectId})
+OPTIONAL MATCH (staffed:Person)-[:WORKED_ON]->(proj)
+WITH proj, collect(DISTINCT staffed.id) AS staffedIds
+MATCH (proj)-[req:REQUIRES_SKILL]->(skill:Skill)
 WHERE req.priority = 'must-have'
 MATCH (candidate:Person)-[hs:HAS_SKILL]->(skill)
 WHERE hs.proficiency >= req.minProficiency
   AND candidate.capacityPct > 0
-  AND NOT EXISTS { MATCH (candidate)-[:WORKED_ON]->(proj) }
-OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(teammate:Person)-[:WORKED_ON]->(proj)
-WITH candidate, skill, count(DISTINCT teammate) AS directConnections
-OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(bridge:Person)-[:COLLABORATED_WITH]-(teammate2:Person)-[:WORKED_ON]->(proj)
-WHERE bridge <> candidate
-WITH candidate, collect(DISTINCT skill.name) AS matchedSkills, directConnections,
-     count(DISTINCT teammate2) AS indirectConnections
+  AND NOT candidate.id IN staffedIds
+OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(direct:Person)
+WITH candidate, skill, staffedIds,
+     [x IN collect(DISTINCT direct.id) WHERE x IN staffedIds] AS directHits
+OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(bridge:Person)-[:COLLABORATED_WITH]-(indirect:Person)
+WHERE bridge <> candidate AND indirect <> candidate
+WITH candidate, skill, staffedIds, directHits,
+     [x IN collect(DISTINCT indirect.id) WHERE x IN staffedIds AND NOT x IN directHits] AS indirectHits
+WITH candidate, collect(DISTINCT skill.name) AS matchedSkills,
+     size(directHits) AS directConnections, size(indirectHits) AS indirectConnections
 RETURN candidate.id AS personId, candidate.name AS name, candidate.title AS title,
        candidate.capacityPct AS capacityPct, matchedSkills, directConnections,
        indirectConnections, (directConnections * 2 + indirectConnections) AS connectionScore
@@ -201,6 +207,20 @@ count how many of the *current team* they've worked with directly (1 hop through
 `COLLABORATED_WITH`) or through one intermediate colleague (2 hops), and rank by skill
 match then connection strength. That's a 3-hop traversal (`Skill → Person →
 COLLABORATED_WITH → COLLABORATED_WITH → Project`) done as one pattern match.
+
+> **A real CognoDB compatibility quirk, found and worked around:** an earlier version
+> of this query filtered "already staffed" and the collaboration counts using
+> `NOT EXISTS { MATCH (candidate)-[:WORKED_ON]->(proj) }` and `OPTIONAL MATCH` clauses
+> that re-referenced an already-bound target node (`proj`). On this CognoDB instance,
+> that pattern silently ignores the property filter on the target and matches *any*
+> relationship of that type instead — confirmed by comparing against ground-truth counts
+> (e.g. a skill filter that should return 17 people returned all 150; an "already
+> staffed" check returned `true` for someone with zero edges to that specific project).
+> The fix, shown above: collect the relevant id set once via the one shape that *does*
+> correlate correctly (a fresh node discovering paths into an already-bound target,
+> e.g. `staffed:Person)-[:WORKED_ON]->(proj)`), then filter everything downstream with
+> plain list membership (`x IN list`) instead of relying on further bound-node pattern
+> matching. `LIST_PEOPLE`'s skill/department filters needed the same fix.
 
 ### Query 2 — Collaboration path (the SQL-awkward one)
 

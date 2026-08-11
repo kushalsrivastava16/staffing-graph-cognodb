@@ -1,16 +1,25 @@
 # All queries are parameterised — parameters are passed via the driver, never
 # string-concatenated into the Cypher text.
+#
+# NOTE on a CognoDB compatibility quirk: this instance's Cypher engine does
+# not correctly apply a property filter on the *target* node of an
+# EXISTS {} subquery or OPTIONAL MATCH when the source node already has
+# multiple matches of that relationship type -- it silently ignores the
+# filter and returns every match instead (confirmed by direct comparison
+# against ground-truth counts). LIST_PEOPLE/COUNT_PEOPLE and
+# RECOMMEND_STAFFING below work around this by collecting the full
+# unfiltered set first and then filtering via plain list membership
+# (`x IN list`), which is unaffected.
 
 HEALTH_CHECK = "RETURN 1 AS ok"
 
 LIST_PEOPLE = """
 MATCH (p:Person)
-WHERE ($skill IS NULL OR EXISTS {
-        MATCH (p)-[:HAS_SKILL]->(s:Skill) WHERE s.name = $skill
-      })
-  AND ($department IS NULL OR EXISTS {
-        MATCH (p)-[:MEMBER_OF]->(d:Department) WHERE d.name = $department
-      })
+OPTIONAL MATCH (p)-[:HAS_SKILL]->(skillNode:Skill)
+OPTIONAL MATCH (p)-[:MEMBER_OF]->(deptNode:Department)
+WITH p, collect(DISTINCT skillNode.name) AS skillNames, collect(DISTINCT deptNode.name) AS deptNames
+WHERE ($skill IS NULL OR $skill IN skillNames)
+  AND ($department IS NULL OR $department IN deptNames)
 RETURN p { .id, .name, .title, .location, .capacityPct } AS person
 ORDER BY p.name
 SKIP $skip LIMIT $limit
@@ -18,12 +27,11 @@ SKIP $skip LIMIT $limit
 
 COUNT_PEOPLE = """
 MATCH (p:Person)
-WHERE ($skill IS NULL OR EXISTS {
-        MATCH (p)-[:HAS_SKILL]->(s:Skill) WHERE s.name = $skill
-      })
-  AND ($department IS NULL OR EXISTS {
-        MATCH (p)-[:MEMBER_OF]->(d:Department) WHERE d.name = $department
-      })
+OPTIONAL MATCH (p)-[:HAS_SKILL]->(skillNode:Skill)
+OPTIONAL MATCH (p)-[:MEMBER_OF]->(deptNode:Department)
+WITH p, collect(DISTINCT skillNode.name) AS skillNames, collect(DISTINCT deptNode.name) AS deptNames
+WHERE ($skill IS NULL OR $skill IN skillNames)
+  AND ($department IS NULL OR $department IN deptNames)
 RETURN count(p) AS total
 """
 
@@ -93,24 +101,30 @@ ORDER BY d.name
 # Q1 -- multi-hop (3 hop) staffing recommendation. Walks Project -> required
 # Skills -> qualified/available Person, then scores each candidate by how
 # closely they're already connected (1 or 2 collaboration hops) to the
-# project's current team.
+# project's current team. The current-team id set is precomputed once
+# (staffedIds) and every connection check is a plain `IN` membership test
+# against it -- see the CognoDB compatibility note above.
 RECOMMEND_STAFFING = """
-MATCH (proj:Project {id: $projectId})-[req:REQUIRES_SKILL]->(skill:Skill)
+MATCH (proj:Project {id: $projectId})
+OPTIONAL MATCH (staffed:Person)-[:WORKED_ON]->(proj)
+WITH proj, collect(DISTINCT staffed.id) AS staffedIds
+MATCH (proj)-[req:REQUIRES_SKILL]->(skill:Skill)
 WHERE req.priority = 'must-have'
 MATCH (candidate:Person)-[hs:HAS_SKILL]->(skill)
 WHERE hs.proficiency >= req.minProficiency
   AND candidate.capacityPct > 0
-  AND NOT EXISTS {
-    MATCH (candidate)-[:WORKED_ON]->(proj)
-  }
-OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(teammate:Person)-[:WORKED_ON]->(proj)
-WITH candidate, skill, count(DISTINCT teammate) AS directConnections
-OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(bridge:Person)-[:COLLABORATED_WITH]-(teammate2:Person)-[:WORKED_ON]->(proj)
-WHERE bridge <> candidate
+  AND NOT candidate.id IN staffedIds
+OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(direct:Person)
+WITH candidate, skill, staffedIds,
+     [x IN collect(DISTINCT direct.id) WHERE x IN staffedIds] AS directHits
+OPTIONAL MATCH (candidate)-[:COLLABORATED_WITH]-(bridge:Person)-[:COLLABORATED_WITH]-(indirect:Person)
+WHERE bridge <> candidate AND indirect <> candidate
+WITH candidate, skill, staffedIds, directHits,
+     [x IN collect(DISTINCT indirect.id) WHERE x IN staffedIds AND NOT x IN directHits] AS indirectHits
 WITH candidate,
      collect(DISTINCT skill.name) AS matchedSkills,
-     directConnections,
-     count(DISTINCT teammate2) AS indirectConnections
+     size(directHits) AS directConnections,
+     size(indirectHits) AS indirectConnections
 RETURN candidate.id AS personId, candidate.name AS name, candidate.title AS title,
        candidate.capacityPct AS capacityPct,
        matchedSkills, directConnections, indirectConnections,
