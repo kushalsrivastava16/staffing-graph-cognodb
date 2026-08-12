@@ -85,7 +85,7 @@ graph LR
 ## 3. Repository structure
 
 ```
-vexai/
+Staffing Graph/
   backend/     FastAPI app (Python) — REST API over the graph
   frontend/    React + Vite app — the UI
   seed/        Data generation + loading scripts (Faker-based, deterministic)
