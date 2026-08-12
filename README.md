@@ -271,3 +271,8 @@ React (Vercel) ──HTTP/JSON──▶ FastAPI (Render) ──Bolt (neo4j drive
   `hooks/useApi.ts` standardizes loading/error/data state; `context/AppStatusContext.tsx`
   polls `/health` and drives a persistent "database unreachable" banner; `pages/` and
   `components/` implement Browse People, Browse Projects, and the core Staffing flow.
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 72300f9e5d6c88b8fccb546c482de13a65998585
