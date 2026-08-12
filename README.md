@@ -6,8 +6,8 @@ colleague — to the team they'd be joining. Built on **CognoDB** (a managed gra
 database speaking openCypher over Bolt) with a **FastAPI** backend and a **React**
 frontend.
 
-- **Hosted demo:** _TODO: add your Vercel URL here_
-- **Screen recording:** _TODO: add your recording link here_
+- **Hosted demo:** [https://staffing-graph-cognodb.vercel.app/](https://staffing-graph-cognodb.vercel.app/) (API: [https://staffing-graph-cognodb.onrender.com/](https://staffing-graph-cognodb.onrender.com/))
+- **Screen recording:** [https://drive.google.com/file/d/1-KvhLwPKzY9RqTwsIyCQqTwMhPEFXUwY/view?usp=sharing/](https://drive.google.com/file/d/1-KvhLwPKzY9RqTwsIyCQqTwMhPEFXUwY/view?usp=sharing)
 
 ---
 
@@ -85,7 +85,7 @@ graph LR
 ## 3. Repository structure
 
 ```
-vexai/
+Staffing Graph/
   backend/     FastAPI app (Python) — REST API over the graph
   frontend/    React + Vite app — the UI
   seed/        Data generation + loading scripts (Faker-based, deterministic)
@@ -271,23 +271,3 @@ React (Vercel) ──HTTP/JSON──▶ FastAPI (Render) ──Bolt (neo4j drive
   `hooks/useApi.ts` standardizes loading/error/data state; `context/AppStatusContext.tsx`
   polls `/health` and drives a persistent "database unreachable" banner; `pages/` and
   `components/` implement Browse People, Browse Projects, and the core Staffing flow.
-
-## 7. Deployment
-
-**Backend → Render**
-1. New Web Service → point at this repo, root directory `backend/`, build via the
-   included `Dockerfile`.
-2. Set env vars: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`,
-   `ALLOWED_ORIGINS` (leave permissive until you have the Vercel URL, then tighten it).
-3. Note the resulting public URL (`https://<service>.onrender.com`).
-
-**Frontend → Vercel**
-1. New Project → root directory `frontend/`, framework preset "Vite."
-2. Env var `VITE_API_BASE_URL` = the Render URL from above.
-3. Deploy, then go back to Render and set `ALLOWED_ORIGINS` to the real Vercel URL.
-
-## 8. Screenshots
-
-_TODO: add screenshots of Home, People browse, Person detail, Project detail, the
-Staffing recommendation list, an expanded collaboration path, and the DB-unreachable
-error banner._
