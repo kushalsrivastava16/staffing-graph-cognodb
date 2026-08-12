@@ -272,22 +272,4 @@ React (Vercel) ──HTTP/JSON──▶ FastAPI (Render) ──Bolt (neo4j drive
   polls `/health` and drives a persistent "database unreachable" banner; `pages/` and
   `components/` implement Browse People, Browse Projects, and the core Staffing flow.
 
-## 7. Deployment
 
-**Backend → Render**
-1. New Web Service → point at this repo, root directory `backend/`, build via the
-   included `Dockerfile`.
-2. Set env vars: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`,
-   `ALLOWED_ORIGINS` (leave permissive until you have the Vercel URL, then tighten it).
-3. Note the resulting public URL (`https://<service>.onrender.com`).
-
-**Frontend → Vercel**
-1. New Project → root directory `frontend/`, framework preset "Vite."
-2. Env var `VITE_API_BASE_URL` = the Render URL from above.
-3. Deploy, then go back to Render and set `ALLOWED_ORIGINS` to the real Vercel URL.
-
-## 8. Screenshots
-
-_TODO: add screenshots of Home, People browse, Person detail, Project detail, the
-Staffing recommendation list, an expanded collaboration path, and the DB-unreachable
-error banner._
